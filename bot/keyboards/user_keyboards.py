@@ -7,6 +7,12 @@ def user_to_menu_kb():
     ]
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
+def user_to_menu_kb_delete():
+    kb = [
+        [InlineKeyboardButton(text='Меню', callback_data='user_menu_delete')]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=kb)
+
 def user_menu_kb():
     kb = [
         [InlineKeyboardButton(text='Профиль', callback_data='profile')],
