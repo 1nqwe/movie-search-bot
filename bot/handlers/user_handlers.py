@@ -4,10 +4,12 @@ from aiogram import Router, F
 from aiogram.filters import CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from bot.keyboards.user_keyboards import user_to_menu_kb, user_menu_kb, user_search_menu_kb, user_to_menu_kb_delete
+from bot.keyboards.user_keyboards import user_to_menu_kb, user_menu_kb, user_search_menu_kb, user_to_menu_kb_delete, \
+    get_genres_keyboard
 from bot.services.shikimori import get_anime
-from bot.services.tmdb import get_movies, get_tv_series
+from bot.services.tmdb import get_movies, get_tv_series, get_movies_by_genre
 from bot.states.user_states import UserState
 from bot.utils.formatters import format_movie, format_anime
 
@@ -15,7 +17,20 @@ user_router = Router()
 
 @user_router.message(CommandStart())
 async def cmd_start(message: Message):
-    await message.answer('привет я помогу найти тебе фильмы, аниме и сериалы', reply_markup=user_to_menu_kb())
+    welcome_text = """
+    🎬 <b>Добро пожаловать!</b> 🍿
+
+    Я твой персональный гид по миру кино!
+    
+    Здесь ты можешь:
+    • Найти любимые фильмы
+    • Найти лучшие фильмы по жанрам
+    • Посмотреть трейлеры фильмов
+    • Узнать о новинах
+
+    Жми на кнопку снизу!
+    """
+    await message.answer(welcome_text, reply_markup=user_to_menu_kb(), parse_mode="HTML")
 
 @user_router.callback_query(F.data == 'user_menu')
 async def user_menu(call: CallbackQuery):
@@ -73,7 +88,7 @@ async def search_movies_step_2(message: Message, state: FSMContext):
 @user_router.callback_query(F.data == 'user_menu_delete')
 async def menu_number_2(call: CallbackQuery):
     await call.message.delete()
-    await call.message.answer('Меню', reply_markup=user_menu_kb())
+    await call.message.answer('🏠 Меню: ', reply_markup=user_menu_kb())
 
 
 @user_router.message(UserState.series)
@@ -166,3 +181,118 @@ async def handle_anime_search(message: Message, state: FSMContext):
         await search_msg.edit_text("⚠️ При запросе произошла ошибка, попробуйте позже...", reply_markup=user_to_menu_kb_delete())
     finally:
         await state.clear()
+
+@user_router.callback_query(F.data == 'collections')
+async def movies_command(call: CallbackQuery):
+    await call.message.edit_text('🎭 Выберите жанр: ', reply_markup=get_genres_keyboard())
+
+
+@user_router.callback_query(lambda c: c.data.startswith('genre_'))
+async def handle_genre_selection(callback: CallbackQuery):
+    genre = callback.data.replace('genre_', '')
+    await callback.message.delete()
+    await callback.answer(f"Ищем {genre}...", show_alert=False)
+
+    status, result = await get_movies_by_genre(genre)
+
+    if not status:
+        builder = InlineKeyboardBuilder()
+        builder.button(
+            text="🔄 Выбрать другой жанр",
+            callback_data="change_genre"
+        )
+
+        try:
+            await callback.message.edit_text(
+                result,
+                reply_markup=builder.as_markup()
+            )
+        except:
+            await callback.message.answer(
+                result,
+                reply_markup=builder.as_markup()
+            )
+        return
+
+    await show_movie_page(
+        callback.message,
+        result,
+        genre_name=genre,
+        page=0
+    )
+
+
+async def show_movie_page(message: Message, movies: list, genre_name: str, page: int):
+    movie = movies[page]
+
+    text = (
+        f"🎬 <b>{movie['title']}</b> ({movie['year']})\n"
+        f"⭐ Рейтинг: <b>{movie['rating']}/10</b>\n\n"
+        f"📝 {movie['overview']}\n\n"
+        f"🍿 Жанр: {genre_name}"
+    )
+
+    builder = InlineKeyboardBuilder()
+
+    if page > 0:
+        builder.button(text="⬅️ Назад", callback_data=f"movie_{genre_name}_{page - 1}")
+    if page < len(movies) - 1:
+        builder.button(text="Далее ➡️", callback_data=f"movie_{genre_name}_{page + 1}")
+
+    builder.button(text="🔁 Другой жанр", callback_data="change_genre")
+    builder.adjust(2)
+
+    try:
+        if movie['poster']:
+            await message.answer_photo(
+                photo=movie['poster'],
+                caption=text,
+                parse_mode="HTML",
+                reply_markup=builder.as_markup()
+            )
+        else:
+            await message.answer(
+                text,
+                parse_mode="HTML",
+                reply_markup=builder.as_markup(),
+                disable_web_page_preview=True
+            )
+    except:
+        await message.answer(
+            "⚠️ Ошибка при отображении фильма",
+            reply_markup=builder.as_markup()
+        )
+
+
+@user_router.callback_query(lambda c: c.data.startswith('movie_'))
+async def handle_movie_nav(callback: CallbackQuery):
+    _, genre, page = callback.data.split('_')
+    page = int(page)
+
+    status, result = await get_movies_by_genre(genre)
+
+    if status:
+        await callback.message.delete()
+        await show_movie_page(
+            callback.message,
+            result,
+            genre_name=genre,
+            page=page
+        )
+    else:
+        await callback.answer(result, show_alert=True)
+
+
+@user_router.callback_query(F.data == 'change_genre')
+async def handle_genre_change(callback: CallbackQuery):
+    await callback.message.delete()
+    await callback.message.answer(
+        "🎭 Выберите жанр:",
+        reply_markup=get_genres_keyboard()
+    )
+
+@user_router.callback_query(F.data == 'profile')
+async def profile(call: CallbackQuery):
+    await call.message.edit_text(f'Ваш профиль:\n\n'
+                                 f'Ваше имя: {call.message.from_user.full_name}',
+                                 reply_markup=user_to_menu_kb_delete())

@@ -41,3 +41,5 @@ def format_anime(anime):
     description = anime.get('description', '')
     text += f"\n📝 {description[:300]}..." if len(description) > 300 else f"\n📝 {description}"
     return text
+
+
