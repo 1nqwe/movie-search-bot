@@ -1,4 +1,4 @@
-# 🎬 MovieBot - Telegram бот для поиска фильмов
+# 🎬 Movie Search Bot - Telegram бот для поиска фильмов
 
 [![Python](https://img.shields.io/badge/Python-3.9%2B-blue)](https://python.org)
 [![Aiogram](https://img.shields.io/badge/Aiogram-3.x-blue)](https://docs.aiogram.dev/)
